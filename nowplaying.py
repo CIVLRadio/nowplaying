@@ -1,21 +1,18 @@
-# civl-nowplaying.py 0.2.1 - watches text file uploaded from SAM using inotify, then POSTs to Icecast API to update now playing metadata
+# civl-nowplaying.py 0.3 - watches text file uploaded from SAM using inotify, then POSTs to Icecast API to update now playing metadata, and sends to NOVIA 272 via Telnet for RDS
 # written by Emma Hones and Anastasia Mayer
-# changelog:
-# 0.2.1 - 2/08/22 - account for special characters, slight refactor of request concatenation
-# 0.2 - 2/08/22 - add rotating generic text, make branding dynamic, refactor for rotating metadata, add error handling
-# 0.1.1 - 2/08/22 - interim for rebase
-# 0.1 - 2/08/22 - initial revision
 
 import inotify.adapters
 import requests
 import time
 from threading import Thread
 import random
+import telnetlib
 
 # settings
 
 dir = '/var/lib/broadcasting' # directory where file is uploaded
 file = 'nowplaying.txt' # filename to watch
+# Icecast
 switch_time = 10 # Seconds in-between Branding and Filename Switch
 mountpoint = 'live.mp3' # Icecast mount to update - no slash
 branding = "101.7 CIVL Radio" # text to append after artist/title
@@ -26,6 +23,13 @@ generic = [
 ] # text to alternate with now playing - remember to escape #'s
 user = 'source' # for Icecast auth, from icecast.xml on server
 pw = '88point5' # see above
+# telnet
+host = 'civl-tx.duckdns.org' # hostname where 272 is located
+port = 10171 # port for Telnet
+psprefix = 'DPS=' # prefix for PS
+rtprefix = 'TEXT=' # prefix for RT
+psbranding = "CIVL Radio" # branding for scrolling PS
+rtbranding = "101.7 CIVL Radio" # branding for RT
 
 # initialise some variables
 
@@ -67,6 +71,35 @@ def _send_data_thread():
             return
     return
 
+# RDS
+
+def _send_rds_thread():
+    try:
+        if np == '':
+            print("nowplaying.py [WARN]: NOW PLAYING is not defined!")
+        else:
+            print("nowplaying.py [LOG]: Sending RDS data ...")
+            # assemble PS and RT
+            pstext = psprefix + '{} {}'.format(psbranding, np.rstrip('\n')) + "\r"
+            rttext = rtprefix + '{} / {}'.format(np.rstrip('\n'), rtbranding) + "\r"
+            # open telnet and start sending
+            with telnetlib.Telnet(host, port) as tn:
+                print("nowplaying.py [RDS]: " + pstext)
+                tn.write(pstext.encode('ascii'))
+                tn.read_until(b'[OK]')
+                print("nowplaying.py [RDS]: Received [OK] for PS")
+                print("nowplaying.py [RDS]: " + rttext)
+                tn.write(rttext.encode('ascii'))
+                tn.read_until(b'[OK]')
+                print("nowplaying.py [RDS]: Received [OK] for RT")
+    except KeyboardInterrupt:
+        run=False
+        return
+    except Exception as E:
+        print(E)
+        return
+    return
+
 # main loop
 def _main():
     try:
@@ -87,6 +120,10 @@ def _main():
                     with open(path + "/" + filename, 'r') as f:
                         np = f.read()
                     print("nowplaying.py [INOTIFY]: NP UPDATED: " + np)
+                    # fire the RDS thread
+                    print("nowplaying.py [INOTIFY]: Triggering RDS update")
+                    rds_thread = Thread(target=_send_rds_thread, daemon=True)
+                    rds_thread.start()
     except KeyboardInterrupt:
         run=False
         return
@@ -97,8 +134,10 @@ def _main():
 
 if __name__ == '__main__':
     try:
-        data_thread = Thread(target=_send_data_thread, daemon=True)
-        data_thread.start()
+        # data_thread = Thread(target=_send_data_thread, daemon=True)
+        # data_thread.start()
+        # rds_thread = Thread(target=_send_rds_thread, daemon=True)
+        # rds_thread.start()
         _main()
     except KeyboardInterrupt:
         run = False
