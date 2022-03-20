@@ -1,35 +1,76 @@
-# civl-nowplaying.py 0.3 - watches text file uploaded from SAM using inotify, then POSTs to Icecast API to update now playing metadata, and sends to NOVIA 272 via Telnet for RDS
+# civl-nowplaying.py 0.4 - watches text file uploaded from SAM using inotify, then POSTs to Icecast API to update now playing metadata, and sends to NOVIA 272 via Telnet for RDS
 # written by Emma Hones and Anastasia Mayer
 
-import inotify.adapters
-import requests
-import time
-from threading import Thread
-import random
-import telnetlib
+# Copyright (c) 2022 Emma Hones and Anastasia Mayer
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 
-# settings
+try:
+    import inotify.adapters
+    import requests
+    import time
+    from threading import Thread
+    import random
+    import telnetlib
+    from configparser import ConfigParser
+except ImportError:
+    print('''
+    nowplaying.py [FATAL]: Loading required modules failed!
+    nowplaying.py [FATAL]: Ensure that the following are installed:
+    nowplaying.py [FATAL]: inotify, requests, time, threading, random, telnetlib, configparser
+    ''')
+    exit(1)
+except Exception:
+    print("nowplaying.py [FATAL]: An unknown exception was raised while loading required modules!")
+    exit(1)
 
-dir = '/var/lib/broadcasting' # directory where file is uploaded
-file = 'nowplaying.txt' # filename to watch
+# initialise variables and read arguments + settings
+
+config = ConfigParser()
+config.read('nowplaying.cfg')
+debug = config.getboolean('Misc', 'verbose')
+if debug == True:
+    import traceback
+
+# input
+dir = config.get('Input', 'directory')
+file = config.get('Input', 'file')
 # Icecast
-switch_time = 10 # Seconds in-between Branding and Filename Switch
-mountpoint = 'live.mp3' # Icecast mount to update - no slash
-branding = "101.7 CIVL Radio" # text to append after artist/title
-generic = [
-"UFV Campus and Community Radio",
-"Canada's Original #1 Campus Radio Station",
-"Serving Abbotsford, Mission, Chilliwack, and Langley"
-] # text to alternate with now playing - remember to escape #'s
-user = 'source' # for Icecast auth, from icecast.xml on server
-pw = '88point5' # see above
+icecast_enable = config.getboolean('Icecast', 'enable')
+switch_time = config.getint('Branding', 'taglines_switch_time')
+mountpoint = config.get('Icecast', 'mountpoint')
+branding = config.get('Branding', 'long_branding')
+generic = config.get('Branding', 'taglines').splitlines()
+# because the pretty config includes a blank line for readability
+generic = list(filter(None, generic))
+user = config.get('Icecast', 'user')
+pw = config.get('Icecast', 'password')
+server = config.get('Icecast', 'server')
+iceport = config.getint('Icecast', 'port')
 # telnet
-host = 'civl-tx.duckdns.org' # hostname where 272 is located
-port = 10171 # port for Telnet
-psprefix = 'DPS=' # prefix for PS
-rtprefix = 'TEXT=' # prefix for RT
-psbranding = "CIVL Radio" # branding for scrolling PS
-rtbranding = "101.7 CIVL Radio" # branding for RT
+telnet_enable = config.getboolean('RDS', 'enable')
+telnet_host = config.get('RDS', 'host')
+telnet_port = config.getint('RDS', 'port')
+ps_prefix = config.get('RDS', 'ps_prefix') # prefix for PS
+rt_prefix = config.get('RDS', 'rt_prefix') # prefix for RT
+ps_branding = config.get('Branding', 'ps_branding') # branding for scrolling PS
+rt_branding = config.get('Branding', 'rt_branding') # branding for RT
 
 # initialise some variables
 
@@ -43,7 +84,7 @@ def _make_URL_ready(text):
 
 # handling data
 
-def _send_data_thread():
+def _send_icecast_thread():
     global run
     while run:
         try:
@@ -52,22 +93,25 @@ def _send_data_thread():
             if np == '':
                 print("nowplaying.py [WARN]: NOW PLAYING is not defined!")
             else:
-                print("nowplaying.py [LOG]: Sending NOW PLAYING Data...")
-                response = requests.get(f"https://live.civl.ca:8000/admin/metadata?mount=/{mountpoint}&mode=updinfo&song={_make_URL_ready(f'{np} / {branding}')}", auth=(user, pw))
-                print("nowplaying.py [REQUEST]: " + response.request.url)
-                print("nowplaying.py [RESPONSE]: " + str(response.status_code))
+                print("nowplaying.py [INFO]: Sending NOW PLAYING Data...")
+                response = requests.get(f"https://{server}:8000/admin/metadata?mount=/{mountpoint}&mode=updinfo&song={_make_URL_ready(f'{np} / {branding}')}", auth=(user, pw))
+                if debug == True:
+                    print("nowplaying.py [DEBUG]: Request: " + response.request.url)
+                    print("nowplaying.py [DEBUG]: Response: " + str(response.status_code))
                 time.sleep(switch_time)
             # assemble and send request
             print("nowplaying.py [LOG]: Sending STATION BRANDING Data...")
             thingy = random.choice(generic) # Choose a rando Generic Branding Thingy
-            response = requests.get(f"https://live.civl.ca:8000/admin/metadata?mount=/{mountpoint}&mode=updinfo&song={_make_URL_ready(f'{thingy} / {branding}')}", auth=(user, pw))
-            print("nowplaying.py [REQUEST]: " + response.request.url)
-            print("nowplaying.py [RESPONSE]: " + str(response.status_code))
+            response = requests.get(f"https://{server}:8000/admin/metadata?mount=/{mountpoint}&mode=updinfo&song={_make_URL_ready(f'{thingy} / {branding}')}", auth=(user, pw))
+            if debug == True:
+                print("nowplaying.py [DEBUG]: Request: " + response.request.url)
+                print("nowplaying.py [DEBUG]: Response: " + str(response.status_code))
         except KeyboardInterrupt:
+            print("nowplaying.py [FATAL]: Ctrl-C or other KeyboardInterrupt received in Icecast thread ...")
             run=False
             return
-        except Exception as E:
-            print(E)
+        except Exception as e:
+            print("nowplaying.py [FATAL]: Exception raised: " + e)
             return
     return
 
@@ -78,26 +122,31 @@ def _send_rds_thread():
         if np == '':
             print("nowplaying.py [WARN]: NOW PLAYING is not defined!")
         else:
-            print("nowplaying.py [LOG]: Sending RDS data ...")
+            print("nowplaying.py [INFO]: Sending RDS data ...")
             # assemble PS and RT
-            pstext = psprefix + '{} {}'.format(psbranding, np.rstrip('\n')) + "\r"
-            rttext = rtprefix + '{} / {}'.format(np.rstrip('\n'), rtbranding) + "\r"
+            ps_text = ps_prefix + '{} {}'.format(ps_branding, np.rstrip('\n')) + "\r"
+            rt_text = rt_prefix + '{} / {}'.format(np.rstrip('\n'), rt_branding) + "\r"
             # open telnet and start sending
-            with telnetlib.Telnet(host, port) as tn:
-                print("nowplaying.py [RDS]: " + pstext)
-                tn.write(pstext.encode('ascii'))
+            with telnetlib.Telnet(telnet_host, telnet_port) as tn:
+                if debug == True:
+                    print("nowplaying.py [DEBUG]: PS: " + ps_text)
+                tn.write(ps_text.encode('ascii'))
                 tn.read_until(b'[OK]')
-                print("nowplaying.py [RDS]: Received [OK] for PS")
-                print("nowplaying.py [RDS]: " + rttext)
-                tn.write(rttext.encode('ascii'))
+                if debug == True:
+                    print("nowplaying.py [DEBUG]: RDS received [OK] for PS")
+                    print("nowplaying.py [DEBUG]: RT: " + rt_text)
+                tn.write(rt_text.encode('ascii'))
                 tn.read_until(b'[OK]')
-                print("nowplaying.py [RDS]: Received [OK] for RT")
+                if debug == True:
+                    print("nowplaying.py [DEBUG]: Received [OK] for RT")
     except KeyboardInterrupt:
+        print("nowplaying.py [FATAL]: Ctrl-C or other KeyboardInterrupt received in RDS thread ...")
         run=False
         return
-    except Exception as E:
-        print(E)
+    except Exception as e:
+        print("nowplaying.py [FATAL]: Exception raised: " + e)
         return
+    return
     return
 
 # main loop
@@ -119,29 +168,37 @@ def _main():
                     # bingo, this is what we want
                     with open(path + "/" + filename, 'r') as f:
                         np = f.read()
-                    print("nowplaying.py [INOTIFY]: NP UPDATED: " + np)
+                    print("nowplaying.py [INFO]: NP UPDATED: " + np)
                     # fire the RDS thread
-                    print("nowplaying.py [INOTIFY]: Triggering RDS update")
-                    rds_thread = Thread(target=_send_rds_thread, daemon=True)
-                    rds_thread.start()
+                    if telnet_enable == True: 
+                        if debug == True:                       
+                            print("nowplaying.py [DEBUG]: Triggering RDS update")
+                        rds_thread = Thread(target=_send_rds_thread, daemon=True)
+                        rds_thread.start()    
+                    else:
+                        if debug == True:
+                            print("nowplaying.py [DEBUG]: RDS not enabled, skipping update")                    
     except KeyboardInterrupt:
+        print("nowplaying.py [FATAL]: Ctrl-C or other KeyboardInterrupt received in main thread ...")
         run=False
         return
-    except Exception as E:
-        print(E)
+    except Exception as e:
+        print("nowplaying.py [FATAL]: Exception raised: " + e)
         return
-
 
 if __name__ == '__main__':
     try:
-        # data_thread = Thread(target=_send_data_thread, daemon=True)
-        # data_thread.start()
-        # rds_thread = Thread(target=_send_rds_thread, daemon=True)
-        # rds_thread.start()
+        if icecast_enable == True:
+            icecast_thread = Thread(target=_send_icecast_thread, daemon=True)
+            icecast_thread.start()
+        elif telnet_enable == False:
+            print("nowplaying.py [FATAL]: Neither Icecast nor Telnet enabled in config. Is this *really* what you want?")
+            exit(1)
         _main()
     except KeyboardInterrupt:
-        run = False
+        print("nowplaying.py [FATAL]: Ctrl-C or other KeyboardInterrupt received in initial thread ...")
+        run=False
         exit(0)
-    except Exception as E:
-        print(E)
+    except Exception as e:
+        print("nowplaying.py [FATAL]: Exception raised: " + e)
         exit(1)

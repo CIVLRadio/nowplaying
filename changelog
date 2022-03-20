@@ -3,3 +3,4 @@
 * 0.2 - 2/08/22 - add rotating generic text, make branding dynamic, refactor for rotating metadata, add error handling
 * 0.2.1 - 2/08/22 - account for special characters, slight refactor of request concatenation
 * 0.3 - 3/16/22 - add support for RDS, utilising the Telnet interface of the NOVIA 272 encoder
+* 0.4 - 3/19/22 - split config to separate file and refactor to handle it, add more error handling, add separate long/short brandings for Icecast
