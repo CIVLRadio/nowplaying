@@ -1,4 +1,4 @@
-# civl-nowplaying.py 0.4 - watches text file uploaded from SAM using inotify, then POSTs to Icecast API to update now playing metadata, and sends to NOVIA 272 via Telnet for RDS
+# civl-nowplaying.py 0.4.1 - watches text file uploaded from SAM using inotify, then POSTs to Icecast API to update now playing metadata, and sends to NOVIA 272 via Telnet for RDS
 # written by Emma Hones and Anastasia Mayer
 
 # Copyright (c) 2022 Emma Hones and Anastasia Mayer
@@ -36,8 +36,9 @@ except ImportError:
     nowplaying.py [FATAL]: inotify, requests, time, threading, random, telnetlib, configparser
     ''')
     exit(1)
-except Exception:
+except Exception as e:
     print("nowplaying.py [FATAL]: An unknown exception was raised while loading required modules!")
+    print("nowplaying.py [FATAL]: " + str(e))
     exit(1)
 
 # initialise variables and read arguments + settings
@@ -111,7 +112,7 @@ def _send_icecast_thread():
             run=False
             return
         except Exception as e:
-            print("nowplaying.py [FATAL]: Exception raised: " + e)
+            print("nowplaying.py [FATAL]: Exception raised: " + str(e))
             return
     return
 
@@ -144,7 +145,7 @@ def _send_rds_thread():
         run=False
         return
     except Exception as e:
-        print("nowplaying.py [FATAL]: Exception raised: " + e)
+        print("nowplaying.py [FATAL]: Exception raised: " + str(e))
         return
     return
     return
@@ -183,7 +184,7 @@ def _main():
         run=False
         return
     except Exception as e:
-        print("nowplaying.py [FATAL]: Exception raised: " + e)
+        print("nowplaying.py [FATAL]: Exception raised: " + str(e))
         return
 
 if __name__ == '__main__':
@@ -200,5 +201,5 @@ if __name__ == '__main__':
         run=False
         exit(0)
     except Exception as e:
-        print("nowplaying.py [FATAL]: Exception raised: " + e)
+        print("nowplaying.py [FATAL]: Exception raised: " + str(e))
         exit(1)
