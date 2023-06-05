@@ -5,3 +5,14 @@
 * 0.3 - 3/16/22 - add support for RDS, utilising the Telnet interface of the NOVIA 272 encoder
 * 0.4 - 3/19/22 - split config to separate file and refactor to handle it, add more error handling, add separate long/short brandings for Icecast
 * 0.4.1 - 8/13/22 - more graceful error handling (i.e. error handling that should hopefully WORK)
+* 0.5 - 6/04/23
+    - actually fix error handling, connection errors in particular should not gum up the works now
+    - switch to inotify_simple, as inotify was giving me bizarre errors in development environment
+    - add support for stripping artist/title separators from RDS PS data
+    - add command line arguments for config file location, verbose mode
+    - fixed early "now playing not defined" warnings before metadata changes ... now we immediately read the file on startup
+    - add support for non-SSL servers
+    - add support for deleting now playing file after reading
+    - add a version check, it looks like 3.6 is a sane minimum
+    - some general cleanup
+    - refactor logging
