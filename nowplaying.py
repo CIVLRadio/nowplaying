@@ -51,8 +51,8 @@ except Exception as e:
 
 parser = argparse.ArgumentParser(
     description='Now playing metadata daemon supporting Icecast and RDS.',
-    epilog='Originally developed for CIVL Radio in Abbotsford, British Columbia.')
-parser.add_argument('-c', '--config', default='nowplaying.cfg.test', help='path to config file')
+    epilog='Originally developed for CIVL Radio in Abbotsford, British Columbia - online at civl.ca.')
+parser.add_argument('-c', '--config', default='nowplaying.cfg', help='path to config file')
 parser.add_argument('-v', '--verbose', action='store_true', help='be more talkative about what\'s happening ... useful for debugging')
 args = parser.parse_args()
 
